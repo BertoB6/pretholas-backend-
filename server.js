@@ -11,8 +11,10 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Servir apenas o painel admin
-app.use('/admin', express.static(path.join(__dirname, 'admin')));
+// Servir o arquivo admin na raiz
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // ===== FUNÇÕES AUXILIARES =====
 const DATA_DIR = path.join(__dirname, 'data');
@@ -67,7 +69,7 @@ function inicializarDados() {
     if (lerJSON('pagamentos').length === 0) escreverJSON('pagamentos', []);
 }
 
-// ===== ROTAS =====
+// ===== ROTAS DA API =====
 app.get('/api/teste', (req, res) => {
     res.json({ mensagem: 'Backend Pretholas funcionando! ✅', status: 'online' });
 });
@@ -150,7 +152,6 @@ app.post('/api/pedidos', (req, res) => {
     pedidos.push(novoPedido);
     escreverJSON('pedidos', pedidos);
     
-    // Atualiza cliente
     const clienteExistente = clientes.find(c => c.telefone === req.body.telefone);
     if (clienteExistente) {
         clienteExistente.totalCompras = (clienteExistente.totalCompras || 0) + (req.body.total || 0);
@@ -170,7 +171,6 @@ app.post('/api/pedidos', (req, res) => {
     }
     escreverJSON('clientes', clientes);
     
-    // Registra pagamento
     pagamentos.push({
         id: Date.now(),
         pedidoId: novoPedido.id,
@@ -231,7 +231,7 @@ app.listen(PORT, '0.0.0.0', () => {
     ║   🚀 PRETHOLAS BACKEND RODANDO     ║
     ╠════════════════════════════════════╣
     ║   📍 Porta: ${PORT}                    ║
-    ║   👑 Admin: /admin                  ║
+    ║   🌐 Admin: https://seu-app.onrender.com ║
     ║   🔐 Senha: AdminPretholas          ║
     ╚════════════════════════════════════╝
     `);
