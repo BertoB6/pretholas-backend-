@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
+// IMPORTANTE: Render define a porta na variável PORT
 const PORT = process.env.PORT || 3000;
 
 // Configurações
@@ -11,14 +12,15 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Servir o arquivo admin na raiz
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
+// Servir arquivos estáticos (ajustar caminho para o Render)
+app.use(express.static(path.join(__dirname, '../frontend')));
+app.use('/admin', express.static(path.join(__dirname, 'admin')));
 
 // ===== FUNÇÕES AUXILIARES =====
+// Usar caminho absoluto para os dados
 const DATA_DIR = path.join(__dirname, 'data');
 
+// Garantir que pasta data existe
 if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
 }
@@ -26,10 +28,13 @@ if (!fs.existsSync(DATA_DIR)) {
 function lerJSON(arquivo) {
     try {
         const filePath = path.join(DATA_DIR, `${arquivo}.json`);
-        if (!fs.existsSync(filePath)) return [];
+        if (!fs.existsSync(filePath)) {
+            return [];
+        }
         const dados = fs.readFileSync(filePath, 'utf8');
         return JSON.parse(dados);
     } catch (error) {
+        console.error(`Erro ao ler ${arquivo}:`, error);
         return [];
     }
 }
@@ -40,6 +45,7 @@ function escreverJSON(arquivo, dados) {
         fs.writeFileSync(filePath, JSON.stringify(dados, null, 2));
         return true;
     } catch (error) {
+        console.error(`Erro ao escrever ${arquivo}:`, error);
         return false;
     }
 }
@@ -47,9 +53,13 @@ function escreverJSON(arquivo, dados) {
 // ===== AUTENTICAÇÃO =====
 const auth = (req, res, next) => {
     const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ erro: 'Acesso negado' });
+    if (!authHeader) {
+        return res.status(401).json({ erro: 'Acesso negado' });
+    }
     const token = authHeader.split(' ')[1];
-    if (token !== 'AdminPretholas') return res.status(401).json({ erro: 'Token inválido' });
+    if (token !== 'AdminPretholas') {
+        return res.status(401).json({ erro: 'Token inválido' });
+    }
     next();
 };
 
@@ -63,28 +73,38 @@ function inicializarDados() {
         { id: 5, nome: 'Chuteira Elite FG', preco: 2500, categoria: 'chuteiras', status: 'ativo', estoque: 7 }
     ];
     
-    if (lerJSON('produtos').length === 0) escreverJSON('produtos', produtosIniciais);
+    const produtos = lerJSON('produtos');
+    if (produtos.length === 0) {
+        escreverJSON('produtos', produtosIniciais);
+    }
+    
     if (lerJSON('pedidos').length === 0) escreverJSON('pedidos', []);
     if (lerJSON('clientes').length === 0) escreverJSON('clientes', []);
     if (lerJSON('pagamentos').length === 0) escreverJSON('pagamentos', []);
 }
 
-// ===== ROTAS DA API =====
+// ===== ROTAS =====
+
+// Teste
 app.get('/api/teste', (req, res) => {
-    res.json({ mensagem: 'Backend Pretholas funcionando! ✅', status: 'online' });
+    res.json({ mensagem: 'Backend Pretholas funcionando! ✅', status: 'online', ambiente: process.env.RENDER ? 'Render' : 'Local' });
 });
 
+// Dashboard
 app.get('/api/dashboard', auth, (req, res) => {
     const produtos = lerJSON('produtos');
     const pedidos = lerJSON('pedidos');
     const clientes = lerJSON('clientes');
-    const totalVendas = pedidos.reduce((s, p) => s + (p.total || 0), 0);
+    
+    const totalVendas = pedidos.reduce((sum, p) => sum + (p.total || 0), 0);
     const pedidosPendentes = pedidos.filter(p => p.status === 'pendente').length;
-    const receitaMes = pedidos.filter(p => {
-        const data = new Date(p.data);
-        const agora = new Date();
-        return data.getMonth() === agora.getMonth() && data.getFullYear() === agora.getFullYear();
-    }).reduce((s, p) => s + (p.total || 0), 0);
+    const receitaMes = pedidos
+        .filter(p => {
+            const data = new Date(p.data);
+            const agora = new Date();
+            return data.getMonth() === agora.getMonth() && data.getFullYear() === agora.getFullYear();
+        })
+        .reduce((sum, p) => sum + (p.total || 0), 0);
     
     res.json({
         totalVendas,
@@ -97,13 +117,20 @@ app.get('/api/dashboard', auth, (req, res) => {
 
 // Produtos
 app.get('/api/produtos', (req, res) => {
-    res.json(lerJSON('produtos'));
+    const produtos = lerJSON('produtos');
+    res.json(produtos);
 });
 
 app.post('/api/produtos', auth, (req, res) => {
     const produtos = lerJSON('produtos');
-    const novoId = produtos.length ? Math.max(...produtos.map(p => p.id)) + 1 : 1;
-    const novoProduto = { id: novoId, ...req.body, preco: parseFloat(req.body.preco) };
+    const novoId = produtos.length > 0 ? Math.max(...produtos.map(p => p.id)) + 1 : 1;
+    
+    const novoProduto = {
+        id: novoId,
+        ...req.body,
+        preco: parseFloat(req.body.preco)
+    };
+    
     produtos.push(novoProduto);
     escreverJSON('produtos', produtos);
     res.json({ sucesso: true, produto: novoProduto });
@@ -113,7 +140,11 @@ app.put('/api/produtos/:id', auth, (req, res) => {
     const produtos = lerJSON('produtos');
     const id = parseInt(req.params.id);
     const index = produtos.findIndex(p => p.id === id);
-    if (index === -1) return res.status(404).json({ erro: 'Produto não encontrado' });
+    
+    if (index === -1) {
+        return res.status(404).json({ erro: 'Produto não encontrado' });
+    }
+    
     produtos[index] = { ...produtos[index], ...req.body };
     escreverJSON('produtos', produtos);
     res.json({ sucesso: true, produto: produtos[index] });
@@ -123,6 +154,7 @@ app.delete('/api/produtos/:id', auth, (req, res) => {
     const produtos = lerJSON('produtos');
     const id = parseInt(req.params.id);
     const novosProdutos = produtos.filter(p => p.id !== id);
+    
     escreverJSON('produtos', novosProdutos);
     res.json({ sucesso: true });
 });
@@ -130,7 +162,7 @@ app.delete('/api/produtos/:id', auth, (req, res) => {
 // Pedidos
 app.get('/api/pedidos', auth, (req, res) => {
     const pedidos = lerJSON('pedidos');
-    res.json(pedidos.sort((a, b) => new Date(b.data) - new Date(a.data)));
+    res.json(pedidos.sort((a,b) => new Date(b.data) - new Date(a.data)));
 });
 
 app.get('/api/pedidos/pendentes', auth, (req, res) => {
@@ -149,12 +181,14 @@ app.post('/api/pedidos', (req, res) => {
         status: 'pendente',
         data: new Date().toISOString()
     };
+    
     pedidos.push(novoPedido);
     escreverJSON('pedidos', pedidos);
     
+    // Atualizar cliente
     const clienteExistente = clientes.find(c => c.telefone === req.body.telefone);
     if (clienteExistente) {
-        clienteExistente.totalCompras = (clienteExistente.totalCompras || 0) + (req.body.total || 0);
+        clienteExistente.totalCompras = (clienteExistente.totalCompras || 0) + req.body.total;
         clienteExistente.ultimaCompra = new Date().toISOString();
         clienteExistente.pedidos = clienteExistente.pedidos || [];
         clienteExistente.pedidos.push(novoPedido.id);
@@ -171,6 +205,7 @@ app.post('/api/pedidos', (req, res) => {
     }
     escreverJSON('clientes', clientes);
     
+    // Registrar pagamento
     pagamentos.push({
         id: Date.now(),
         pedidoId: novoPedido.id,
@@ -189,8 +224,11 @@ app.put('/api/pedidos/:id/confirmar', auth, (req, res) => {
     const pedidos = lerJSON('pedidos');
     const pagamentos = lerJSON('pagamentos');
     const id = parseInt(req.params.id);
+    
     const pedido = pedidos.find(p => p.id === id);
-    if (!pedido) return res.status(404).json({ erro: 'Pedido não encontrado' });
+    if (!pedido) {
+        return res.status(404).json({ erro: 'Pedido não encontrado' });
+    }
     
     pedido.status = 'confirmado';
     pedido.dataConfirmacao = new Date().toISOString();
@@ -202,19 +240,20 @@ app.put('/api/pedidos/:id/confirmar', auth, (req, res) => {
         pagamento.dataConfirmacao = new Date().toISOString();
         escreverJSON('pagamentos', pagamentos);
     }
+    
     res.json({ sucesso: true });
 });
 
 // Clientes
 app.get('/api/clientes', auth, (req, res) => {
     const clientes = lerJSON('clientes');
-    res.json(clientes.sort((a, b) => (b.totalCompras || 0) - (a.totalCompras || 0)));
+    res.json(clientes.sort((a,b) => (b.totalCompras || 0) - (a.totalCompras || 0)));
 });
 
 // Pagamentos
 app.get('/api/pagamentos', auth, (req, res) => {
     const pagamentos = lerJSON('pagamentos');
-    res.json(pagamentos.sort((a, b) => new Date(b.data) - new Date(a.data)));
+    res.json(pagamentos.sort((a,b) => new Date(b.data) - new Date(a.data)));
 });
 
 app.get('/api/pagamentos/pendentes', auth, (req, res) => {
@@ -222,16 +261,31 @@ app.get('/api/pagamentos/pendentes', auth, (req, res) => {
     res.json(pagamentos.filter(p => p.status === 'pendente'));
 });
 
-// Inicializar e iniciar
+// Servir o index.html na raiz
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Servir o index.html na raiz
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Servir arquivos estáticos (CSS, JS se houver)
+app.use(express.static(__dirname));
+
+// Inicializar
 inicializarDados();
 
+// Iniciar servidor
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`
     ╔════════════════════════════════════╗
     ║   🚀 PRETHOLAS BACKEND RODANDO     ║
     ╠════════════════════════════════════╣
-    ║   📍 Porta: ${PORT}                    ║
-    ║   🌐 Admin: https://seu-app.onrender.com ║
+    ║   📍 Local: http://localhost:${PORT}    ║
+    ║   🌐 Render: Porta ${PORT}             ║
+    ║   👑 Admin: /admin                  ║
     ║   🔐 Senha: AdminPretholas          ║
     ╚════════════════════════════════════╝
     `);

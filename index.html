@@ -573,7 +573,7 @@
 </div>
 
 <script>
-const API_URL = 'http://localhost:3000/api';
+const API_URL = 'https://pretholas-backend.onrender.com/api';
 let token = '';
 let produtosData = [], pedidosData = [], clientesData = [], pagamentosData = [];
 let chart = null;
@@ -597,10 +597,13 @@ function mostrarLoading(show) { document.getElementById('loadingOverlay').style.
 function fecharModal(id) { document.getElementById(id).style.display = 'none'; }
 
 async function request(url, options = {}) {
-    options.headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...options.headers };
-    const res = await fetch(API_URL + url, options);
-    if (!res.ok) throw new Error('Erro');
-    return res.json();
+    options.headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        ...options.headers
+    };
+    const response = await fetch(API_URL + url, options);
+    return response.json();
 }
 
 function mostrarNotificacao(titulo, msg, tipo) {
